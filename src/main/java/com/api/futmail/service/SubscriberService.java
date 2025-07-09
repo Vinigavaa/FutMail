@@ -3,6 +3,7 @@ package com.api.futmail.service;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.api.futmail.dto.SubscriberRequest;
@@ -17,6 +18,7 @@ import jakarta.transaction.Transactional;
 @Transactional
 public class SubscriberService {
     
+    @Autowired
     private final SubscriberRepository subscriberRepository;
     
     public SubscriberService(SubscriberRepository subscriberRepository) {

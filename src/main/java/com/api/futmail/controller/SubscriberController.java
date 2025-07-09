@@ -1,8 +1,8 @@
 package com.api.futmail.controller;
 
-
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,17 +15,16 @@ import com.api.futmail.dto.SubscriberResponse;
 import com.api.futmail.service.SubscriberService;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 
 // controller/SubscriberController.java
 @RestController
 @RequestMapping("/api/subscribers")
+@RequiredArgsConstructor
 public class SubscriberController {
     
+    @Autowired
     private final SubscriberService subscriberService;
-    
-    public SubscriberController(SubscriberService subscriberService) {
-        this.subscriberService = subscriberService;
-    }
     
     @PostMapping
     public ResponseEntity<SubscriberResponse> subscribe(
