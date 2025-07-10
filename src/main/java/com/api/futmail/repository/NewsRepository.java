@@ -3,7 +3,6 @@ package com.api.futmail.repository;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import org.springframework.boot.autoconfigure.data.web.SpringDataWebProperties.Pageable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -25,9 +24,9 @@ public interface NewsRepository extends JpaRepository<News, Long> {
     boolean existsByContentHash(String contentHash);
     
     @Query("SELECT n FROM News n WHERE n.active = true ORDER BY n.publishedAt DESC")
-    Page<News> findActiveNews(Pageable pageable);
+    Page<News> findActiveNews(org.springframework.data.domain.Pageable pageable);
     
-    // Buscar notícias do dia para newsletter
-    @Query("SELECT n FROM News n WHERE n.active = true AND DATE(n.publishedAt) = CURRENT_DATE ORDER BY n.publishedAt DESC")
-    List<News> findTodaysNews();
+    // CORREÇÃO: Mudança na query para funcionar com H2 e PostgreSQL
+    @Query("SELECT n FROM News n WHERE n.active = true AND n.publishedAt >= :startOfDay AND n.publishedAt <= :endOfDay ORDER BY n.publishedAt DESC")
+    List<News> findTodaysNews(@Param("startOfDay") LocalDateTime startOfDay, @Param("endOfDay") LocalDateTime endOfDay);
 }
