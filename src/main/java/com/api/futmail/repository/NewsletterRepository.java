@@ -21,6 +21,6 @@ public interface NewsletterRepository extends JpaRepository<Newsletter, Long> {
     @Query("SELECT n FROM Newsletter n WHERE n.status = :status ORDER BY n.createdAt DESC")
     List<Newsletter> findByStatus(@Param("status") NewsletterStatus status);
     
-    @Query("SELECT n FROM Newsletter n WHERE DATE(n.sentAt) = CURRENT_DATE")
-    List<Newsletter> findTodaysSentNewsletters();
+    //@Query("SELECT n FROM Newsletter n WHERE DATE(n.sentAt) = CURRENT_DATE")
+    //List<Newsletter> findTodaysSentNewsletters();
 }

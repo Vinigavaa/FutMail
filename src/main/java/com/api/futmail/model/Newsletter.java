@@ -36,8 +36,8 @@ public class Newsletter {
     @Column(columnDefinition = "TEXT")
     private String htmlContent;
 
-    @Column(name = "send_at")
-    private LocalDateTime sendAt;
+    @Column(name = "sent_at")
+    private LocalDateTime sentAt;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
