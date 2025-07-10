@@ -17,7 +17,6 @@ import com.api.futmail.repository.NewsRepository;
 
 import jakarta.transaction.Transactional;
 
-// service/NewsService.java
 @Service
 @Transactional
 public class NewsService {
