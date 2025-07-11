@@ -1,11 +1,18 @@
 package com.api.futmail.model;
 
-// model/MatchResult.java
-
+import lombok.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class MatchResult {
+    
+    private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("dd/MM HH:mm");
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM 'às' HH:mm");
+    
     private String homeTeam;
     private String awayTeam;
     private Integer homeScore;
@@ -13,111 +20,103 @@ public class MatchResult {
     private String status;
     private LocalDateTime matchDate;
     private String competition;
-
-    public MatchResult(String homeTeam, String awayTeam, Integer homeScore,
-                       Integer awayScore, String status, LocalDateTime matchDate, String competition) {
-        this.homeTeam = homeTeam;
-        this.awayTeam = awayTeam;
-        this.homeScore = homeScore;
-        this.awayScore = awayScore;
-        this.status = status;
-        this.matchDate = matchDate;
-        this.competition = competition;
-    }
-
-    // Getters
-    public String getHomeTeam() {
-        return homeTeam;
-    }
-
-    public String getAwayTeam() {
-        return awayTeam;
-    }
-
-    public Integer getHomeScore() {
-        return homeScore;
-    }
-
-    public Integer getAwayScore() {
-        return awayScore;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public LocalDateTime getMatchDate() {
-        return matchDate;
-    }
-
-    public String getCompetition() {
-        return competition;
-    }
-
-    // Setters
-    public void setHomeTeam(String homeTeam) {
-        this.homeTeam = homeTeam;
-    }
-
-    public void setAwayTeam(String awayTeam) {
-        this.awayTeam = awayTeam;
-    }
-
-    public void setHomeScore(Integer homeScore) {
-        this.homeScore = homeScore;
-    }
-
-    public void setAwayScore(Integer awayScore) {
-        this.awayScore = awayScore;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public void setMatchDate(LocalDateTime matchDate) {
-        this.matchDate = matchDate;
-    }
-
-    public void setCompetition(String competition) {
-        this.competition = competition;
-    }
-
+    
     public String toNewsTitle() {
-        if ("Finalizado".equals(status) && homeScore != null && awayScore != null) {
-            return String.format("⚽ %s %d x %d %s - %s",
-                    homeTeam, homeScore, awayScore, awayTeam, competition);
-        } else if ("Ao Vivo".equals(status) || "Em Andamento".equals(status)) {
-            String scoreText = (homeScore != null && awayScore != null)
-                    ? String.format(" %d x %d", homeScore, awayScore) : "";
-            return String.format("🔴 AO VIVO: %s%s %s - %s",
-                    homeTeam, scoreText, awayTeam, competition);
-        } else {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM HH:mm");
-            return String.format("📅 %s x %s - %s (%s)",
-                    homeTeam, awayTeam, competition, matchDate.format(formatter));
+        if (isFinished()) {
+            return createFinishedMatchTitle();
         }
+        
+        if (isLive()) {
+            return createLiveMatchTitle();
+        }
+        
+        return createScheduledMatchTitle();
     }
-
+    
     public String toNewsSummary() {
-        if ("Finalizado".equals(status) && homeScore != null && awayScore != null) {
-            String winner = homeScore > awayScore ? homeTeam :
-                    awayScore > homeScore ? awayTeam : "Empate";
-            if (!"Empate".equals(winner)) {
-                return String.format("%s venceu %s por %d a %d pela %s.",
-                        winner, homeScore > awayScore ? awayTeam : homeTeam,
-                        Math.max(homeScore, awayScore), Math.min(homeScore, awayScore), competition);
-            } else {
-                return String.format("%s e %s empataram em %d a %d pela %s.",
-                        homeTeam, awayTeam, homeScore, awayScore, competition);
-            }
-        } else if ("Ao Vivo".equals(status) || "Em Andamento".equals(status)) {
-            return String.format("🔴 %s e %s estão jogando AGORA pela %s.",
-                    homeTeam, awayTeam, competition);
-        } else {
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM 'às' HH:mm");
-            return String.format("%s enfrentará %s no dia %s pela %s.",
-                    homeTeam, awayTeam, matchDate.format(formatter), competition);
+        if (isFinished()) {
+            return createFinishedMatchSummary();
         }
+        
+        if (isLive()) {
+            return createLiveMatchSummary();
+        }
+        
+        return createScheduledMatchSummary();
+    }
+    
+    private boolean isFinished() {
+        return "Finalizado".equals(status);
+    }
+    
+    private boolean isLive() {
+        return "Ao Vivo".equals(status) || "Em Andamento".equals(status);
+    }
+    
+    private boolean hasScore() {
+        return homeScore != null && awayScore != null;
+    }
+    
+    private String createFinishedMatchTitle() {
+        if (hasScore()) {
+            return String.format("⚽ %s %d x %d %s - %s", 
+                homeTeam, homeScore, awayScore, awayTeam, competition);
+        }
+        return String.format("⚽ %s x %s - %s", homeTeam, awayTeam, competition);
+    }
+    
+    private String createLiveMatchTitle() {
+        String scoreText = hasScore() ? String.format(" %d x %d", homeScore, awayScore) : "";
+        return String.format("🔴 AO VIVO: %s%s %s - %s", 
+            homeTeam, scoreText, awayTeam, competition);
+    }
+    
+    private String createScheduledMatchTitle() {
+        return String.format("📅 %s x %s - %s (%s)", 
+            homeTeam, awayTeam, competition, matchDate.format(DATE_TIME_FORMATTER));
+    }
+    
+    private String createFinishedMatchSummary() {
+        if (!hasScore()) {
+            return String.format("%s enfrentou %s pela %s.", homeTeam, awayTeam, competition);
+        }
+        
+        String winner = determineWinner();
+        if ("Empate".equals(winner)) {
+            return String.format("%s e %s empataram em %d a %d pela %s.", 
+                homeTeam, awayTeam, homeScore, awayScore, competition);
+        }
+        
+        String loser = homeScore > awayScore ? awayTeam : homeTeam;
+        int winnerScore = Math.max(homeScore, awayScore);
+        int loserScore = Math.min(homeScore, awayScore);
+        
+        return String.format("%s venceu %s por %d a %d pela %s.", 
+            winner, loser, winnerScore, loserScore, competition);
+    }
+    
+    private String createLiveMatchSummary() {
+        return String.format("🔴 %s e %s estão jogando AGORA pela %s.", 
+            homeTeam, awayTeam, competition);
+    }
+    
+    private String createScheduledMatchSummary() {
+        return String.format("%s enfrentará %s no dia %s pela %s.", 
+            homeTeam, awayTeam, matchDate.format(DATE_FORMATTER), competition);
+    }
+    
+    private String determineWinner() {
+        if (homeScore > awayScore) {
+            return homeTeam;
+        } else if (awayScore > homeScore) {
+            return awayTeam;
+        }
+        return "Empate";
+    }
+    
+    public boolean isImportantMatch() {
+        return competition.toLowerCase().contains("champions") || 
+               competition.toLowerCase().contains("final") ||
+               competition.toLowerCase().contains("clássico");
     }
 }

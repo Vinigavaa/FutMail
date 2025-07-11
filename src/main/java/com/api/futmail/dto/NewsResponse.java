@@ -1,19 +1,15 @@
 package com.api.futmail.dto;
 
+import lombok.*;
 import java.time.LocalDateTime;
-
 import com.api.futmail.model.News;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
-@Getter
-@Setter
-@AllArgsConstructor
+@Data
+@Builder
 @NoArgsConstructor
+@AllArgsConstructor
 public class NewsResponse {
+    
     private Long id;
     private String title;
     private String content;
@@ -23,18 +19,44 @@ public class NewsResponse {
     private String sourceName;
     private LocalDateTime publishedAt;
     private LocalDateTime createdAt;
+    private Boolean active;
     
     public static NewsResponse fromEntity(News news) {
-        NewsResponse response = new NewsResponse();
-        response.setId(news.getId());
-        response.setTitle(news.getTitle());
-        response.setContent(news.getContent());
-        response.setSummary(news.getSummary());
-        response.setCategory(news.getCategory().getDisplayName());
-        response.setSourceUrl(news.getSourceUrl());
-        response.setSourceName(news.getSourceName());
-        response.setPublishedAt(news.getPublishedAt());
-        response.setCreatedAt(news.getCreatedAt());
-        return response;
+        if (news == null) {
+            return null;
+        }
+        
+        return NewsResponse.builder()
+                .id(news.getId())
+                .title(news.getTitle())
+                .content(news.getContent())
+                .summary(news.getSummary())
+                .category(news.getCategory().getDisplayName())
+                .sourceUrl(news.getSourceUrl())
+                .sourceName(news.getSourceName())
+                .publishedAt(news.getPublishedAt())
+                .createdAt(news.getCreatedAt())
+                .active(news.getActive())
+                .build();
+    }
+    
+    public boolean isPublishedToday() {
+        return publishedAt != null && 
+               publishedAt.toLocalDate().equals(LocalDateTime.now().toLocalDate());
+    }
+    
+    public boolean hasSource() {
+        return sourceName != null && !sourceName.trim().isEmpty();
+    }
+    
+    public boolean isActive() {
+        return Boolean.TRUE.equals(active);
+    }
+    
+    public String getShortSummary() {
+        if (summary == null || summary.length() <= 100) {
+            return summary;
+        }
+        return summary.substring(0, 100) + "...";
     }
 }

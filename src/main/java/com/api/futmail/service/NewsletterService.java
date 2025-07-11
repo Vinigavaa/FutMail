@@ -1,105 +1,129 @@
 package com.api.futmail.service;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.List;
-import java.util.stream.Collectors;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.api.futmail.dto.NewsResponse;
 import com.api.futmail.dto.NewsletterResponse;
 import com.api.futmail.dto.SubscriberResponse;
+import com.api.futmail.model.EmailSendResult;
 import com.api.futmail.model.Newsletter;
 import com.api.futmail.model.NewsletterStatus;
 import com.api.futmail.repository.NewsletterRepository;
 
-import jakarta.transaction.Transactional;
-import lombok.AllArgsConstructor;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 
+@Slf4j
 @Service
+@RequiredArgsConstructor
 @Transactional
-@AllArgsConstructor
 public class NewsletterService {
-    private final Logger logger = LoggerFactory.getLogger(NewsletterService.class);
-
+    
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM");
+    private static final int DEFAULT_NEWS_LIMIT = 5;
+    private static final int FALLBACK_DAYS = 2;
+    
     private final NewsletterRepository newsletterRepository;
     private final NewsService newsService;
     private final SubscriberService subscriberService;
     private final EmailService emailService;
     
     public NewsletterResponse createDailyNewsletter() {
-        logger.info("📰 Criando newsletter diária");
+        log.info("📰 Criando newsletter diária");
         
-        // Buscar notícias do dia
-        List<NewsResponse> todaysNews = newsService.getTodaysNews();
+        List<NewsResponse> todaysNews = getNewsForNewsletter();
         
-        if (todaysNews.isEmpty()) {
-            // Se não há notícias de hoje, pegar dos últimos 2 dias
-            todaysNews = newsService.getRecentNews(2);
-        }
+        Newsletter newsletter = buildDailyNewsletter(todaysNews);
+        Newsletter savedNewsletter = newsletterRepository.save(newsletter);
         
-        // Criar newsletter
-        Newsletter newsletter = new Newsletter();
-        newsletter.setSubject(generateSubject());
-        newsletter.setContent(generateTextContent(todaysNews));
-        newsletter.setHtmlContent(generateHtmlContent(todaysNews));
-        newsletter.setStatus(NewsletterStatus.DRAFT);
+        log.info("✅ Newsletter criada com ID: {}", savedNewsletter.getId());
         
-        Newsletter saved = newsletterRepository.save(newsletter);
-        logger.info("✅ Newsletter criada com ID: {}", saved.getId());
-        
-        return NewsletterResponse.fromEntity(saved);
+        return NewsletterResponse.fromEntity(savedNewsletter);
     }
     
     public NewsletterResponse sendNewsletter(Long newsletterId) {
-        Newsletter newsletter = newsletterRepository.findById(newsletterId)
-            .orElseThrow(() -> new IllegalArgumentException("Newsletter não encontrada"));
+        Newsletter newsletter = findNewsletterById(newsletterId);
         
-        if (newsletter.getStatus() != NewsletterStatus.DRAFT) {
-            throw new IllegalArgumentException("Newsletter já foi enviada ou está em processo de envio");
-        }
+        validateNewsletterCanBeSent(newsletter);
         
-        logger.info("📤 Iniciando envio da newsletter ID: {}", newsletterId);
+        log.info("📤 Iniciando envio da newsletter ID: {}", newsletterId);
         
-        // Buscar assinantes ativos
-        List<SubscriberResponse> subscribers = subscriberService.getActiveSubscribers();
-        List<String> emails = subscribers.stream()
-            .map(SubscriberResponse::getEmail)
-            .collect(Collectors.toList());
+        List<SubscriberResponse> activeSubscribers = subscriberService.getActiveSubscribers();
+        List<String> emails = extractEmailsFromSubscribers(activeSubscribers);
         
-        newsletter.setStatus(NewsletterStatus.SENDING);
+        newsletter.markAsStartedSending();
         newsletter.setTotalSubscribers(emails.size());
         newsletterRepository.save(newsletter);
         
-        // Enviar emails
-        EmailService.EmailSendResult result = emailService.sendBulkEmails(
+        EmailSendResult sendResult = emailService.sendBulkEmails(
             emails, 
             newsletter.getSubject(), 
             newsletter.getHtmlContent()
         );
         
-        // Atualizar status
-        newsletter.setEmailsSent(result.getSent());
-        newsletter.setEmailsFailed(result.getFailed());
-        newsletter.setStatus(result.getFailed() == 0 ? NewsletterStatus.SENT : NewsletterStatus.FAILED);
-        newsletter.setSentAt(LocalDateTime.now());
+        newsletter.markAsSent(emails.size(), sendResult.getSent(), sendResult.getFailed());
+        Newsletter updatedNewsletter = newsletterRepository.save(newsletter);
         
-        Newsletter updated = newsletterRepository.save(newsletter);
-        logger.info("✅ Newsletter enviada: {} sucessos, {} falhas", result.getSent(), result.getFailed());
+        log.info("✅ Newsletter enviada: {}", sendResult.getSummary());
         
-        return NewsletterResponse.fromEntity(updated);
+        return NewsletterResponse.fromEntity(updatedNewsletter);
+    }
+    
+    public Page<NewsletterResponse> getAllNewsletters(int page, int size) {
+        PageRequest pageable = PageRequest.of(page, size);
+        return newsletterRepository.findAllOrderByCreatedAtDesc(pageable)
+                .map(NewsletterResponse::fromEntity);
+    }
+    
+    private List<NewsResponse> getNewsForNewsletter() {
+        List<NewsResponse> todaysNews = newsService.getTodaysNews();
+        
+        if (todaysNews.isEmpty()) {
+            log.info("📄 Nenhuma notícia hoje, buscando dos últimos {} dias", FALLBACK_DAYS);
+            todaysNews = newsService.getRecentNews(FALLBACK_DAYS);
+        }
+        
+        return todaysNews;
+    }
+    
+    private Newsletter buildDailyNewsletter(List<NewsResponse> news) {
+        return Newsletter.builder()
+                .subject(generateSubject())
+                .content(generateTextContent(news))
+                .htmlContent(generateHtmlContent(news))
+                .status(NewsletterStatus.DRAFT)
+                .build();
+    }
+    
+    private Newsletter findNewsletterById(Long newsletterId) {
+        return newsletterRepository.findById(newsletterId)
+                .orElseThrow(() -> new IllegalArgumentException("Newsletter não encontrada"));
+    }
+    
+    private void validateNewsletterCanBeSent(Newsletter newsletter) {
+        if (!newsletter.canBeSent()) {
+            throw new IllegalArgumentException("Newsletter já foi enviada ou está em processo de envio");
+        }
+    }
+    
+    private List<String> extractEmailsFromSubscribers(List<SubscriberResponse> subscribers) {
+        return subscribers.stream()
+                .filter(SubscriberResponse::canReceiveEmails)
+                .map(SubscriberResponse::getEmail)
+                .toList();
     }
     
     private String generateSubject() {
         LocalDate today = LocalDate.now();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM");
-        return String.format("⚽ Futmail - %s | Sua dose diária de futebol", today.format(formatter));
+        return String.format("⚽ Futmail - %s | Sua dose diária de futebol", 
+                today.format(DATE_FORMATTER));
     }
     
     private String generateTextContent(List<NewsResponse> news) {
@@ -113,14 +137,9 @@ public class NewsletterService {
         
         content.append("📰 PRINCIPAIS NOTÍCIAS DO DIA:\n\n");
         
-        for (int i = 0; i < Math.min(5, news.size()); i++) {
-            NewsResponse n = news.get(i);
-            content.append(String.format("%d. %s\n", i + 1, n.getTitle()));
-            if (n.getSummary() != null) {
-                content.append(String.format("   %s\n", n.getSummary()));
-            }
-            content.append("\n");
-        }
+        news.stream()
+                .limit(DEFAULT_NEWS_LIMIT)
+                .forEach(newsItem -> appendNewsToContent(content, newsItem));
         
         content.append("Acesse nosso site para mais notícias!\n");
         content.append("\nObrigado por assinar o Futmail! ⚽");
@@ -128,9 +147,44 @@ public class NewsletterService {
         return content.toString();
     }
     
+    private void appendNewsToContent(StringBuilder content, NewsResponse newsItem) {
+        content.append(String.format("• %s\n", newsItem.getTitle()));
+        if (newsItem.getSummary() != null) {
+            content.append(String.format("  %s\n", newsItem.getSummary()));
+        }
+        content.append("\n");
+    }
+    
     private String generateHtmlContent(List<NewsResponse> news) {
         StringBuilder html = new StringBuilder();
-        html.append("""
+        html.append(getHtmlHeader());
+        
+        if (news.isEmpty()) {
+            html.append("<p>Nenhuma notícia disponível hoje.</p>");
+        } else {
+            html.append("<h2>📰 Principais notícias do dia:</h2>");
+            
+            news.stream()
+                    .limit(DEFAULT_NEWS_LIMIT)
+                    .forEach(newsItem -> appendNewsToHtml(html, newsItem));
+        }
+        
+        html.append(getHtmlFooter());
+        
+        return html.toString();
+    }
+    
+    private void appendNewsToHtml(StringBuilder html, NewsResponse newsItem) {
+        html.append("<div class='news-item'>");
+        html.append("<div class='news-title'>").append(newsItem.getTitle()).append("</div>");
+        if (newsItem.getSummary() != null) {
+            html.append("<div class='news-summary'>").append(newsItem.getSummary()).append("</div>");
+        }
+        html.append("</div>");
+    }
+    
+    private String getHtmlHeader() {
+        return """
             <!DOCTYPE html>
             <html>
             <head>
@@ -152,25 +206,11 @@ public class NewsletterService {
                     <p>Sua dose diária de futebol em 5 minutos</p>
                 </div>
                 <div class="content">
-            """);
-        
-        if (news.isEmpty()) {
-            html.append("<p>Nenhuma notícia disponível hoje.</p>");
-        } else {
-            html.append("<h2>📰 Principais notícias do dia:</h2>");
-            
-            for (int i = 0; i < Math.min(5, news.size()); i++) {
-                NewsResponse n = news.get(i);
-                html.append("<div class='news-item'>");
-                html.append("<div class='news-title'>").append(n.getTitle()).append("</div>");
-                if (n.getSummary() != null) {
-                    html.append("<div class='news-summary'>").append(n.getSummary()).append("</div>");
-                }
-                html.append("</div>");
-            }
-        }
-        
-        html.append("""
+            """;
+    }
+    
+    private String getHtmlFooter() {
+        return """
                 </div>
                 <div class="footer">
                     <p>Obrigado por assinar o Futmail! ⚽</p>
@@ -178,14 +218,6 @@ public class NewsletterService {
                 </div>
             </body>
             </html>
-            """);
-        
-        return html.toString();
-    }
-    
-    public Page<NewsletterResponse> getAllNewsletters(int page, int size) {
-        PageRequest pageable = PageRequest.of(page, size);
-        return newsletterRepository.findAllOrderByCreatedAtDesc(pageable)
-            .map(NewsletterResponse::fromEntity);
+            """;
     }
 }
